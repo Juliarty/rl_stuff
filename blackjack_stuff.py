@@ -9,7 +9,7 @@ __author__ = 'Juliarty'
 
 import numpy as np
 import random
-
+import plotly.express as px
 
 def get_dealer_sum_possibilities(num_of_exp=1000000, card_num_dealer_takes=6):
     card_values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
@@ -63,13 +63,17 @@ def get_dealer_sum_possibilities(num_of_exp=1000000, card_num_dealer_takes=6):
 
 
 class BjStuff:
-    # state is a vector (usable_ace, player_sum, dealer_first_card)
+    _total_card_num = 52
+    _card_suit_num = 4
+    _card_eq_10_num = 4  # 10, J, D, K
+    # BlackJack is an episodic game, that's why it has to have a terminal state.
+    # state is a vector (usable_ace, player_sum, dealer_first_card) + Terminal state
     # also there is a player_sum 'busted' for the player
     _dealer_card_num = 10  # [1, 2 , 3 , ..., 10]
-    _player_sum_num = 11  # [12, ... , 21, 22 = 'busted']
+    _player_sum_num = 10  # [12, ... , 21]
     _usable_ace_num = 2  # [True, False]
 
-    states_num = _dealer_card_num * _player_sum_num * _usable_ace_num
+    states_num = _dealer_card_num * _player_sum_num * _usable_ace_num + 1
     # stick = 0; hit = 1
     actions_num = 2
 
@@ -90,7 +94,10 @@ class BjStuff:
          10: {20: 0.348054, 18: 0.125723, 19: 0.118627, 17: 0.118406, 22: 0.246888, 21: 0.042302}}
 
     def __init__(self):
-        ii = 0
+        self._state_to_num[(-1, -1, -1)] = 0
+        self._num_to_state[0] = (-1, -1, -1)
+
+        ii = 1
         for i in range(self._usable_ace_num):
             for j in range(self._player_sum_num):
                 for k in range(self._dealer_card_num):
@@ -114,13 +121,18 @@ class BjStuff:
             for j in range(self._player_sum_num):
                 for k in range(self._dealer_card_num):
                     state = self._state_to_num[(i, j + 12, k + 1)]
-                    if j + 12 == 22:
-                        reward_matrix[state][0] = -1
-                        reward_matrix[state][1] = -1
-                        continue
+                    # rewards for hit
+                    hit_reward = 0
+                    if i == 0:
+                        bad_next_card_num = 10 - (21 - (j + 12))
+                        hit_reward -= (self._card_suit_num * self._card_eq_10_num +
+                                       (bad_next_card_num - 1) * self._card_suit_num) / self._total_card_num \
+                            if bad_next_card_num > 0 else 0
+                    reward_matrix[state][1] = hit_reward
 
+                    # rewards for stick
                     for dealer_sum in self._first_card_to_dealer_sum[k + 1].keys():
-                        if dealer_sum == 22:
+                        if dealer_sum >= 22:
                             reward_matrix[state][0] += self._first_card_to_dealer_sum[k + 1][dealer_sum]
                             continue
 
@@ -139,7 +151,11 @@ class BjStuff:
     # after we take the action.
     def get_model(self):
         cards = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10]
-        dynamics_matrix = np.zeros(shape=(self.states_num, self.states_num))
+        dynamics_matrix_hit = np.zeros(shape=(self.states_num, self.states_num))
+
+        # zeroth state is a terminal state (the end of a played episode)
+        dynamics_matrix_hit[0, 0] = 1
+
         for i in range(self._usable_ace_num):
             for j in range(self._player_sum_num):
                 for k in range(self._dealer_card_num):
@@ -160,8 +176,10 @@ class BjStuff:
                                 continue
                             next_usable_ace = 0
                             next_player_sum = player_sum + card
-                            if next_player_sum > 21:    # 'busted'
-                                next_player_sum = 22
+                            if next_player_sum > 21:  # 'busted'
+                                next_player_sum = -1
+                                next_usable_ace = -1
+                                dealer_card = -1
                         else:
                             next_player_sum = player_sum + card
                             if next_player_sum > 21:
@@ -169,8 +187,11 @@ class BjStuff:
                                 next_usable_ace = 0
 
                         s2 = self._state_to_num[(next_usable_ace, next_player_sum, dealer_card)]
-                        dynamics_matrix[s1][s2] += 4/52
-        return np.asarray([np.identity(self.states_num), dynamics_matrix])
+                        dynamics_matrix_hit[s1][s2] += 4 / 52
+
+        dynamics_matrix_stick = np.zeros(shape=(self.states_num, self.states_num))
+        dynamics_matrix_stick[:, 0] = np.ones(self.states_num)
+        return np.asarray([dynamics_matrix_stick, dynamics_matrix_hit])
 
     def get_state_num(self, usable_ace, player_sum, dealer_card):
         return self._state_to_num[(usable_ace, player_sum, dealer_card)]
@@ -196,11 +217,49 @@ class BjStuff:
         for i in range(self._usable_ace_num):
             for j in range(self._player_sum_num):
                 for k in range(self._dealer_card_num):
-                    print("Usable ace: ", i, "; " 
-                          "Player's sum: ", j + 12, "; ",
+                    print("Usable ace: ", i, "; "
+                                             "Player's sum: ", j + 12, "; ",
                           "Dealer's card: ", k + 1, ";",
                           "Stick: ", q_mx[self._state_to_num[(i, j + 12, k + 1)], 0], ",",
                           "Hit: ", q_mx[self._state_to_num[(i, j + 12, k + 1)], 1])
+
+    def print_nice_policy(self, policy):
+        str_format = "Usable ace: {usable_ace}; Player's sum: {player_sum}; " \
+                     "Dealer's card: {dealer_card}; Action: {action}"
+        for i in range(self._usable_ace_num):
+            for j in range(self._player_sum_num):
+                for k in range(self._dealer_card_num):
+                    state_num = self._state_to_num[(i, j + 12, k + 1)]
+                    if policy[state_num, 0] == 1:
+                        print(str_format.format(usable_ace=i, player_sum=j+12, dealer_card=k+1, action="Stick"))
+                    else:
+                        print(str_format.format(usable_ace=i, player_sum=j+12, dealer_card=k+1, action="Hit"))
+
+    def draw_plot(self, policy):
+        data_with_usable_ace = np.zeros(shape=(self._player_sum_num, self._dealer_card_num))
+        data_without_usable_ace = np.zeros(shape=(self._player_sum_num, self._dealer_card_num))
+
+        for j in range(self._player_sum_num):
+            for k in range(self._dealer_card_num):
+                state_num = self._state_to_num[(1, j + 12, k + 1)]
+                data_with_usable_ace[j, k] = 0 if policy[state_num, 0] == 1 else 1
+
+        for j in range(self._player_sum_num):
+            for k in range(self._dealer_card_num):
+                state_num = self._state_to_num[(0, j + 12, k + 1)]
+                data_without_usable_ace[j, k] = 0 if policy[state_num, 0] == 1 else 1
+
+        fig_with_usable_ace = px.imshow(data_with_usable_ace,
+                labels=dict(x="Dealer Showing", y="Player's sum", color="Action"),
+                x=['A', '2', '3', '4', '5', '6', '7', '8', '9', '10'],
+                y=['12', '13', '14', '15', '16', '17', '18', '19', '20', '21'], title="With usable ace")
+
+        fig_without_usable_ace = px.imshow(data_without_usable_ace,
+                labels=dict(x="Dealer Showing", y="Player's sum", color="Action"),
+                x=['A', '2', '3', '4', '5', '6', '7', '8', '9', '10'],
+                y=['12', '13', '14', '15', '16', '17', '18', '19', '20', '21'], title="Without usable ace")
+        fig_with_usable_ace.show()
+        fig_without_usable_ace.show()
 
 
 if __name__ == "__main__":
