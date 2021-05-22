@@ -11,6 +11,7 @@ import numpy as np
 import random
 import plotly.express as px
 
+
 def get_dealer_sum_possibilities(num_of_exp=1000000, card_num_dealer_takes=6):
     card_values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     all_cards = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10] * 4
@@ -231,13 +232,16 @@ class BjStuff:
                 for k in range(self._dealer_card_num):
                     state_num = self._state_to_num[(i, j + 12, k + 1)]
                     if policy[state_num, 0] == 1:
-                        print(str_format.format(usable_ace=i, player_sum=j+12, dealer_card=k+1, action="Stick"))
+                        print(str_format.format(usable_ace=i, player_sum=j + 12, dealer_card=k + 1, action="Stick"))
                     else:
-                        print(str_format.format(usable_ace=i, player_sum=j+12, dealer_card=k+1, action="Hit"))
+                        print(str_format.format(usable_ace=i, player_sum=j + 12, dealer_card=k + 1, action="Hit"))
 
     def draw_plot(self, policy):
         data_with_usable_ace = np.zeros(shape=(self._player_sum_num, self._dealer_card_num))
         data_without_usable_ace = np.zeros(shape=(self._player_sum_num, self._dealer_card_num))
+
+        # data_with_usable_ace = np.chararray(shape=(self._player_sum_num, self._dealer_card_num))
+        # data_without_usable_ace = np.chararray(shape=(self._player_sum_num, self._dealer_card_num))
 
         for j in range(self._player_sum_num):
             for k in range(self._dealer_card_num):
@@ -249,15 +253,30 @@ class BjStuff:
                 state_num = self._state_to_num[(0, j + 12, k + 1)]
                 data_without_usable_ace[j, k] = 0 if policy[state_num, 0] == 1 else 1
 
-        fig_with_usable_ace = px.imshow(data_with_usable_ace,
-                labels=dict(x="Dealer Showing", y="Player's sum", color="Action"),
-                x=['A', '2', '3', '4', '5', '6', '7', '8', '9', '10'],
-                y=['12', '13', '14', '15', '16', '17', '18', '19', '20', '21'], title="With usable ace")
+        fig_with_usable_ace = px.imshow(data_with_usable_ace.astype(int),
+                                        labels=dict(x="Dealer Showing", y="Player's sum"),
+                                        x=['A', '2', '3', '4', '5', '6', '7', '8', '9', '10'],
+                                        y=['12', '13', '14', '15', '16', '17', '18', '19', '20', '21'],
+                                        title="With usable ace", origin='lower')
 
-        fig_without_usable_ace = px.imshow(data_without_usable_ace,
-                labels=dict(x="Dealer Showing", y="Player's sum", color="Action"),
-                x=['A', '2', '3', '4', '5', '6', '7', '8', '9', '10'],
-                y=['12', '13', '14', '15', '16', '17', '18', '19', '20', '21'], title="Without usable ace")
+        fig_without_usable_ace = px.imshow(data_without_usable_ace.astype(int),
+                                           labels=dict(x="Dealer Showing", y="Player's sum"),
+                                           x=['A', '2', '3', '4', '5', '6', '7', '8', '9', '10'],
+                                           y=['12', '13', '14', '15', '16', '17', '18', '19', '20', '21'],
+                                           title="Without usable ace",
+                                           origin='lower')
+
+        fig_with_usable_ace.update_layout(coloraxis_colorbar=dict(
+            title="Action",
+            tickvals=['0', '1'],
+            ticktext=["Stick", "Hit"]))
+        fig_without_usable_ace.update_layout(coloraxis_colorbar=dict(
+            title="Action",
+            tickvals=['0', '1'],
+            ticktext=["Stick", "Hit"]))
+
+        fig_with_usable_ace.update_layout(width=500, height=500)
+        fig_without_usable_ace.update_layout(width=500, height=500)
         fig_with_usable_ace.show()
         fig_without_usable_ace.show()
 

@@ -1,5 +1,4 @@
 import numpy as np
-import random
 import blackjack_stuff as bjs
 
 
@@ -46,17 +45,16 @@ def policy_iteration(states_num,
                      dynamics_mx,
                      policy_mx,
                      reward_mx,
-                     discount_factor=1,
+                     discount_factor=1.0,
                      greedy_factor=0.8,
                      max_policy_iteration_num=100,
                      max_policy_eval_num=100,
                      policy_eval_stop_criteria=None,
                      policy_iter_stop_criteria=None):
-
     current_policy = policy_mx
     for i in range(max_policy_iteration_num):
         q_mx = policy_evaluation_q(states_num, actions_num,
-                                   dynamics_mx, bj.get_simple_policy(),
+                                   dynamics_mx, current_policy,
                                    reward_mx, discount_factor, num_of_iteration=max_policy_eval_num,
                                    end_condition_func=policy_eval_stop_criteria)
         new_policy = policy_eps_greedy_improvement(current_policy, q_mx, greedy_factor)
@@ -76,11 +74,13 @@ def policy_eps_greedy_improvement(policy_mx, policy_q_mx, eps):
     for i in range(policy_mx.shape[0]):
         if np.random.binomial(1, 1 - eps):
             action_num = policy_q_mx[i].argmax(0)
+            if len(np.argwhere(policy_q_mx[i] == policy_q_mx[i, action_num])) > 1:
+                action_num = np.random.choice(range(policy_mx.shape[1]))
         else:
             action_num = np.random.choice(range(policy_mx.shape[1]))
         new_policy[i, action_num] = 1
-
     return new_policy
+
 
 # Monte-Carlo
 
@@ -95,30 +95,32 @@ def update_eligibility_trace(tr_array, discount_factor, lamb, state):
 
 def ssq(eps):
     def func(q_mx, prev_q_mx):
-        value = np.sum((q_mx - prev_q_mx) ** 2)
+        value = np.sum((q_mx - prev_q_mx) ** 2) ** 0.5
+        value /= q_mx.size
         return True if value < eps else False
+
     return func
 
 
 if __name__ == '__main__':
-    bj = bjs.BjStuff()
+    # game = grid.SimpleGridWorld(terminal_state_pos=5, states_num=10)
+    game = bjs.BjStuff()
 
-    optimal_policy = policy_iteration(bj.states_num,
-                                      bj.actions_num,
-                                      bj.get_model(),
-                                      bj.get_simple_policy(),
-                                      bj.get_reward(),
-                                      discount_factor=1,
-                                      greedy_factor=0.85,
+    optimal_policy = policy_iteration(game.states_num,
+                                      game.actions_num,
+                                      game.get_model(),
+                                      game.get_simple_policy(),
+                                      game.get_reward(),
+                                      discount_factor=0.85,
+                                      greedy_factor=0.005,
                                       max_policy_iteration_num=1000,
-                                      max_policy_eval_num=100,
-                                      policy_eval_stop_criteria=ssq(0.00001),
-                                      policy_iter_stop_criteria=ssq(0.001))
+                                      max_policy_eval_num=10,
+                                      policy_eval_stop_criteria=None,
+                                      policy_iter_stop_criteria=ssq(0.00001))
 
-    q_mx = policy_evaluation_q(bj.states_num, bj.actions_num,
-                               bj.get_model(), bj.get_simple_policy(),
-                               bj.get_reward(), 1, num_of_iteration=100,
-                               end_condition_func=ssq(0.0000001))
-
-    # bj.print_nice_q(q_mx)
-    bj.draw_plot(optimal_policy)
+    game.draw_plot(optimal_policy)
+    q_mx = policy_evaluation_q(game.states_num, game.actions_num,
+                               game.get_model(), optimal_policy,
+                               game.get_reward(), 1, num_of_iteration=1000,
+                               end_condition_func=ssq(0.00001))
+    game.print_nice_q(q_mx)
