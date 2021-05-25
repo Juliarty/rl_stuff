@@ -83,10 +83,38 @@ def policy_eps_greedy_improvement(policy_mx, policy_q_mx, eps):
 
 
 # Monte-Carlo
+# Greedy in the limit with infinite exploration (GLIE)
+# freq_mx - matrix where we store the number of times when we visited (state,action) game (m x n)
+# q_mx - action-value matrix (m x n)
+def glie_mc_evaluation(episode, q_mx, freq_mx):
+    # calculate G_t - reward for the episode
+    all_reward = 0
+    for i in range(len(episode)):
+        all_reward += episode[i][2]
+
+    for i in range(len(episode)):
+        state = episode[i][0]
+        action = episode[i][1]
+        freq_mx[state, action] += 1
+        q_mx[state, action] += (all_reward - q_mx[state, action]) / freq_mx[state, action]
+
+
+# generate_sample_func - a function that provides us with an episode, where we used the policy
+# that we passed to this function
+def glie_mc_control(policy_mx, generate_sample_func, iteration_num):
+    states_num = policy_mx.shape[0]
+    action_num = policy_mx.shape[1]
+    q_mx = np.zeros(shape=(states_num, action_num))
+    freq_mx = np.zeros(shape=(states_num, action_num))
+    for i in range(iteration_num):
+        episode = generate_sample_func(policy_mx)
+        glie_mc_evaluation(episode, q_mx, freq_mx)
+        policy_mx = policy_eps_greedy_improvement(policy_mx, q_mx, (action_num - 1) / action_num * (1/(i / 500 + 1)))
+
+    return policy_mx
 
 
 # TD(0)
-
 def update_eligibility_trace(tr_array, discount_factor, lamb, state):
     tmp = discount_factor * lamb
     tr_array *= tmp
@@ -106,21 +134,23 @@ if __name__ == '__main__':
     # game = grid.SimpleGridWorld(terminal_state_pos=5, states_num=10)
     game = bjs.BjStuff()
 
-    optimal_policy = policy_iteration(game.states_num,
-                                      game.actions_num,
-                                      game.get_model(),
-                                      game.get_simple_policy(),
-                                      game.get_reward(),
-                                      discount_factor=0.85,
-                                      greedy_factor=0.005,
-                                      max_policy_iteration_num=1000,
-                                      max_policy_eval_num=10,
-                                      policy_eval_stop_criteria=None,
-                                      policy_iter_stop_criteria=ssq(0.00001))
+    #optimal_policy = policy_iteration(game.states_num,
+    #                                  game.actions_num,
+    #                                  game.get_model(),
+    #                                  game.get_simple_policy(),
+    #                                  game.get_reward(),
+    #                                  discount_factor=0.85,
+    #                                  greedy_factor=0.005,
+    #                                  max_policy_iteration_num=1000,
+    #                                  max_policy_eval_num=10,
+    #                                  policy_eval_stop_criteria=None,
+    #                                  policy_iter_stop_criteria=ssq(0.00001))
 
+    optimal_policy = glie_mc_control(game.get_simple_policy(), lambda x: game.get_episodes(x, episodes_num=1)[0], iteration_num=100000)
     game.draw_plot(optimal_policy)
     q_mx = policy_evaluation_q(game.states_num, game.actions_num,
                                game.get_model(), optimal_policy,
                                game.get_reward(), 1, num_of_iteration=1000,
                                end_condition_func=ssq(0.00001))
+
     game.print_nice_q(q_mx)

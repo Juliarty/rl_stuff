@@ -39,6 +39,3 @@ def start():
         print("\nGame #" + str(counter))
         episode(env)
         counter += 1
-
-
-start()

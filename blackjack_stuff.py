@@ -10,6 +10,7 @@ __author__ = 'Juliarty'
 import numpy as np
 import random
 import plotly.express as px
+from gym.envs.toy_text.blackjack import BlackjackEnv
 
 
 def get_dealer_sum_possibilities(num_of_exp=1000000, card_num_dealer_takes=6):
@@ -61,6 +62,13 @@ def get_dealer_sum_possibilities(num_of_exp=1000000, card_num_dealer_takes=6):
             card_to_sum2prob[card][s] /= num_of_exp
 
     return card_to_sum2prob
+
+
+def transform_to_my_state(keras_state):
+    usable_ace = 1 if keras_state[2] else 0
+    player_sum = keras_state[0]
+    dealer_card = keras_state[1]
+    return usable_ace, player_sum, dealer_card
 
 
 class BjStuff:
@@ -280,9 +288,36 @@ class BjStuff:
         fig_with_usable_ace.show()
         fig_without_usable_ace.show()
 
+    # Notice: we hit automatically if player's sum is less than 12
+    def get_episodes(self, policy_mx, episodes_num=1000):
+        experience = []
+        env = BlackjackEnv()
+
+        for i in range(episodes_num):
+            episode = []
+            done = False
+            state = transform_to_my_state(env.reset())
+            while state[1] < 12:
+                state, reward, done, _ = env.step(1)
+                state = transform_to_my_state(state)
+
+            while not done:
+                state_num = self._state_to_num[state]
+                action_prob_list = policy_mx[state_num]
+                action = np.random.choice(self.actions_num, p=action_prob_list)
+                new_state, reward, done, _ = env.step(action)
+                new_state = transform_to_my_state(new_state)
+                episode.append([state_num, action, reward])
+                state = new_state
+
+            experience.append(episode)
+
+        return experience
+
 
 if __name__ == "__main__":
     s = BjStuff()
-    model = s.get_model()
-    print(s.get_reward())
+    exp = s.get_episodes(s.get_simple_policy(), episodes_num=10)
+
+    print(exp)
     # print(get_dealer_sum_possibilities())
